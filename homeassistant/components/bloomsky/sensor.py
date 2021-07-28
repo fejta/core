@@ -3,26 +3,56 @@ import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import (
-    AREA_SQUARE_METERS,
     CONF_MONITORED_CONDITIONS,
-    PERCENTAGE,
-    PRESSURE_INHG,
-    PRESSURE_MBAR,
+
+    # Units of measurement
+    VOLT,
+
     TEMP_CELSIUS,
     TEMP_FAHRENHEIT,
+
+    LENGTH_MILLIMETERS,
+    LENGTH_INCHES,
+
+    PRESSURE_INHG,
+    PRESSURE_MBAR,
+
+    AREA_SQUARE_METERS,
+
+    UV_INDEX,
+
+    PERCENTAGE,
+
+    PRECIPITATION_MILLIMETERS_PER_HOUR,
+
+    SPEED_INCHES_PER_HOUR,
+    SPEED_MILES_PER_HOUR,
+    SPEED_METERS_PER_SECOND,
 )
 import homeassistant.helpers.config_validation as cv
 
 from . import DOMAIN
 
+# See http://weatherlution.com/bloomsky-api/
+# http://weatherlution.com/wp-content/uploads/2016/01/v1.6BloomskyDeviceOwnerAPIDocumentationforBusinessOwners.pdf
+
 # These are the available sensors
 SENSOR_TYPES = [
+    # SKY
     "Temperature",
     "Humidity",
     "Pressure",
     "Luminance",
-    "UVIndex",
+    "UVIndex", # Also on storm
     "Voltage",
+
+    # Storm
+    "WindDirection", # NW, etc
+    "RainDaily", # 12a-1159p
+    "WindGust",
+    "SustainedWindSpeed",
+    "RainRate", # last 10m
+    "24hRain", # last 24hs
 ]
 
 # Sensor units - these do not currently align with the API documentation
@@ -31,7 +61,13 @@ SENSOR_UNITS_IMPERIAL = {
     "Humidity": PERCENTAGE,
     "Pressure": PRESSURE_INHG,
     "Luminance": f"cd/{AREA_SQUARE_METERS}",
-    "Voltage": "mV",
+    "Voltage": f"m{VOLT}",
+
+    "RainDaily": LENGTH_INCHES,
+    "WindGust": SPEED_MILES_PER_HOUR,
+    "SustainedWindSpeed": SPEED_MILES_PER_HOUR,
+    "RainRate": SPEED_INCHES_PER_HOUR,
+    "24hRain": LENGTH_INCHES,
 }
 
 # Metric units
@@ -40,11 +76,28 @@ SENSOR_UNITS_METRIC = {
     "Humidity": PERCENTAGE,
     "Pressure": PRESSURE_MBAR,
     "Luminance": f"cd/{AREA_SQUARE_METERS}",
-    "Voltage": "mV",
+    "Voltage": f"m{VOLT}",
+
+    # "WindDirection"
+    "RainDaily": LENGTH_MILLIMETERS,
+    "WindGust": SPEED_METERS_PER_SECOND,
+    "SustainedWindSpeed": SPEED_METERS_PER_SECOND,
+    "RainRate": PRECIPITATION_MILLIMETERS_PER_HOUR,
+    "24hRain": LENGTH_MILLIMETERS,
 }
 
 # Which sensors to format numerically
-FORMAT_NUMBERS = ["Temperature", "Pressure", "Voltage"]
+FORMAT_NUMBERS = [
+        "Temperature",
+        "Pressure",
+        "Voltage",
+
+        "RainDaily",
+        "WindGust",
+        "SustainedWindSpeed",
+        "RainRate",
+        "24hRain",
+]
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -107,7 +160,10 @@ class BloomSkySensor(SensorEntity):
         """Request an update from the BloomSky API."""
         self._bloomsky.refresh_devices()
 
-        state = self._bloomsky.devices[self._device_id]["Data"][self._sensor_name]
+        data = self._bloomsky.devices[self._device_id].get("Data", {})
+        # Storm supersedes sky data.
+        data.update(self._bloomsky.devices[self._device_id].get("Storm", {}))
+        state = data[self._sensor_name]
 
         if self._sensor_name in FORMAT_NUMBERS:
             self._state = f"{state:.2f}"
